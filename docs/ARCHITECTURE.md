@@ -72,11 +72,15 @@ not import viem directly except for encoding/decoding inside the adapter.
 - **`validation.ts`** — validates untrusted create-payment payloads. A
   client-provided status is never trusted.
 - **`repository.ts`** — the persistence contract and its errors.
-- **`database.ts`** — opens SQLite (creating the file if needed), applies the
-  schema, and exposes constraint helpers.
-- **`sqlite-repository.ts`** — the durable implementation. The atomic claim runs
-  in a single SQLite transaction; `tx_claims.tx_hash` (PRIMARY KEY) and the
-  partial `payments.tx_hash` UNIQUE index are the final replay guards.
+- **`prisma.ts`** — the shared Prisma client (Neon serverless adapter), cached on
+  `globalThis` for serverless.
+- **`prisma-repository.ts`** — the production implementation. The atomic claim
+  runs in a single `prisma.$transaction`; `tx_claims.tx_hash` (PRIMARY KEY) and
+  the `payments.tx_hash` UNIQUE constraint are the final replay guards.
+- **`database.ts` / `sqlite-repository.ts` / `sqlite-mapping.ts`** — the previous
+  SQLite store. It is no longer used at runtime (kept only as a test fixture
+  until the live PostgreSQL verification runs) and `better-sqlite3` is a
+  devDependency.
 - **`memory-repository.ts`** — an in-memory double used only by unit tests.
 - **`index.ts`** — the lazily created repository singleton and test override.
 - **`payment-flow.ts`** — the pure payment-attempt state machine
@@ -85,14 +89,14 @@ not import viem directly except for encoding/decoding inside the adapter.
 
 ## Persistence and replay protection
 
-The durable store is **SQLite** via `better-sqlite3` (`serverExternalPackages`).
-It was chosen because it is the smallest durable relational store that needs no
-external credentials, fits a single-node Node deployment, and enforces the
-uniqueness guarantee with a real database constraint. A managed Postgres
-implementation can substitute the same `PaymentRepository` interface without
-touching the verifier or the routes.
+The durable store is **PostgreSQL (Neon)** accessed through **Prisma 7** with
+the Neon serverless driver adapter. This replaced the earlier single-node SQLite
+store so the app can run on serverless infrastructure (Vercel) without
+filesystem state and without connection-pool exhaustion. The verifier and the
+routes are untouched: everything goes through the `PaymentRepository`
+interface. See [`docs/DATABASE.md`](./DATABASE.md) for setup and migrations.
 
-Schema (see `lib/payments/database.ts`):
+Schema (`prisma/schema.prisma`, applied by `prisma/migrations`):
 
 ```sql
 CREATE TABLE payments (
@@ -101,16 +105,15 @@ CREATE TABLE payments (
   amount_base_units TEXT NOT NULL,
   recipient TEXT NOT NULL,
   description TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('PENDING', 'CONFIRMED', 'EXPIRED')),
-  tx_hash TEXT,
+  status TEXT NOT NULL,
+  tx_hash TEXT UNIQUE,
   payer TEXT,
+  failure_reason TEXT,
   created_at TEXT NOT NULL,
   confirmed_at TEXT,
+  CHECK (status IN ('PENDING', 'CONFIRMED', 'EXPIRED')),
   CHECK ((status = 'CONFIRMED') = (tx_hash IS NOT NULL))
 );
-
-CREATE UNIQUE INDEX payments_tx_hash_unique
-  ON payments (tx_hash) WHERE tx_hash IS NOT NULL;
 
 CREATE TABLE tx_claims (
   tx_hash TEXT PRIMARY KEY,
@@ -119,20 +122,24 @@ CREATE TABLE tx_claims (
 );
 ```
 
-Nullable `tx_hash` is deliberate: many PENDING payments have `NULL`, while a
-non-null hash can occur at most once. The claim order is always:
+`tx_hash` is nullable and `UNIQUE`. PostgreSQL treats `NULL`s as distinct, so
+many PENDING payments may share `NULL` while a non-null hash belongs to at most
+one payment — the PostgreSQL equivalent of the previous partial unique index.
+The claim order is always:
 
 ```text
 blockchain verification -> verified result -> atomic txHash claim -> CONFIRMED
 ```
 
-If the claim conflicts, the payment is **not** confirmed. The claim is proven
-under real concurrency by a test that races eight worker threads against the
-same hash; exactly one wins and the rest receive a constraint conflict.
+If the claim conflicts, the payment is **not** confirmed. Concurrency is proven
+in `tests/prisma-repository.test.ts` (deterministic double with PostgreSQL
+transaction semantics) and, when a database is available, in
+`tests/prisma-integration.test.ts`.
 
-LIMITATION: a local SQLite file is not shared across serverless instances. For
-multi-instance deployment, point `DATABASE_PATH` at persistent storage or
-implement the Postgres adapter; the interface and schema are ready.
+LIMITATION: the migration and its concurrency behaviour have been verified
+against a deterministic in-memory double, not yet against a live Neon database.
+Run `prisma migrate deploy` and the optional integration test before production
+use; see [`docs/DATABASE.md`](./DATABASE.md).
 
 ## Wallet payment flow
 
@@ -214,8 +221,8 @@ the receipt has not landed yet, or any check fails, the payment remains
 
 ## Known structural limitations
 
-- Persistence is durable single-node SQLite. A local file is not shared across
-  serverless instances; see `docs/SECURITY.md`.
+- Persistence is PostgreSQL (Neon) via Prisma; the live database migration is
+  still pending. See `docs/DATABASE.md`.
 - Transfer-time binding tolerates up to 120 seconds of clock skew. A transfer in
   that small window before payment creation is still accepted.
 - The MVP accepts only a direct `USDC.transfer`, not contract-routed payments.

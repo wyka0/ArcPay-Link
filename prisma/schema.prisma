@@ -1,0 +1,49 @@
+// Prisma schema for ArcPay Link — PostgreSQL (Neon).
+//
+// This mirrors the verified SQLite data model exactly. Presentation-level
+// storage only: no payment, verification, or chain logic lives here.
+//
+// Design notes:
+// - `id` stays a string (application-generated UUID) as before.
+// - USDC amounts stay text: `amountUsdc` is the canonical decimal string and
+//   `amountBaseUnits` is the exact 6-decimal integer as a string. No floats.
+// - Timestamps stay ISO-8601 strings so the domain model is unchanged.
+// - `tx_claims.tx_hash` is the PRIMARY KEY: the atomic replay guard.
+// - `payments.tx_hash` is UNIQUE and nullable (Postgres allows many NULLs),
+//   so one transaction hash can belong to at most one payment.
+// - The CHECK constraints reproduce the SQLite invariants.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Payment {
+  id              String   @id
+  amountUsdc      String   @map("amount_usdc")
+  amountBaseUnits String   @map("amount_base_units")
+  recipient       String
+  description     String
+  status          String
+  txHash          String?  @unique @map("tx_hash")
+  payer           String?
+  failureReason   String?  @map("failure_reason")
+  createdAt       String   @map("created_at")
+  confirmedAt     String?  @map("confirmed_at")
+
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model TxClaim {
+  txHash    String @id @map("tx_hash")
+  paymentId String @map("payment_id")
+  claimedAt String @map("claimed_at")
+
+  @@index([paymentId])
+  @@map("tx_claims")
+}

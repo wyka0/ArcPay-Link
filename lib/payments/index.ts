@@ -1,13 +1,13 @@
-import { openDatabase, resolveDatabasePath } from "./database";
 import type { PaymentRepository } from "./repository";
-import { createSqlitePaymentRepository } from "./sqlite-repository";
+import { getPrismaClient } from "./prisma";
+import { createPrismaPaymentRepository } from "./prisma-repository";
 
 /**
  * Repository access point.
  *
- * The production repository is durable SQLite. It is created lazily so that
- * importing a route module (for example during a build) never opens a database
- * file. Tests can substitute a repository with `setPaymentRepository`.
+ * Production uses the Prisma/PostgreSQL (Neon) repository. It is created lazily
+ * so that importing a route module (for example during a build) never opens a
+ * database connection. Tests substitute a repository with `setPaymentRepository`.
  */
 
 const GLOBAL_KEY = "__arcPayLinkPaymentRepository__";
@@ -24,8 +24,7 @@ function globalSlot(): typeof globalThis & {
 export function getPaymentRepository(): PaymentRepository {
   const slot = globalSlot();
   if (!slot[GLOBAL_KEY]) {
-    const db = openDatabase(resolveDatabasePath());
-    slot[GLOBAL_KEY] = createSqlitePaymentRepository(db);
+    slot[GLOBAL_KEY] = createPrismaPaymentRepository(getPrismaClient());
   }
   return slot[GLOBAL_KEY]!;
 }
@@ -35,7 +34,7 @@ export function setPaymentRepository(repository: PaymentRepository): void {
   globalSlot()[GLOBAL_KEY] = repository;
 }
 
-/** Reset the cached repository so the next call re-opens it. */
+/** Reset the cached repository so the next call re-creates it. */
 export function resetPaymentRepository(): void {
   delete globalSlot()[GLOBAL_KEY];
 }

@@ -84,15 +84,19 @@ success.
 
 ## Transaction replay / double-claim protection
 
-Payments are stored in a durable SQLite database. Replay protection is enforced
-by database constraints, not by application checks:
+Payments are stored in a durable **PostgreSQL (Neon)** database accessed through
+Prisma. Replay protection is enforced by database constraints, not by
+application checks:
 
 - `tx_claims.tx_hash` is a `PRIMARY KEY`, so a hash can be inserted once.
-- `payments.tx_hash` has a partial `UNIQUE` index, so a non-null hash can belong
-  to only one payment.
+- `payments.tx_hash` is `UNIQUE` and nullable. PostgreSQL treats `NULL`s as
+  distinct, so many pending payments may hold `NULL` while a non-null hash
+  belongs to at most one payment (the equivalent of the previous partial index
+  `... WHERE tx_hash IS NOT NULL`).
+- A `CHECK` constraint enforces `CONFIRMED` ⇔ `tx_hash IS NOT NULL`.
 
-`claim` runs inside a single SQLite transaction. A concurrent insert of the same
-hash fails with a constraint error, which is mapped to
+`claim` runs inside a single `prisma.$transaction`. A concurrent insert of the
+same hash fails with a unique-constraint error (`P2002`), which is mapped to
 `TransactionAlreadyClaimedError` and returned as HTTP `409`. The verify route
 also checks the claim index before contacting the RPC, but the database
 constraint is the final authority: even if two processes pass the pre-check at
@@ -101,15 +105,18 @@ the same time, exactly one claim can commit.
 Ordering is fixed: on-chain verification first, then the atomic claim, then
 `CONFIRMED`. A failed claim never yields a confirmation.
 
-Evidence: `tests/durable-repository.test.ts` races eight worker threads against
-the same transaction hash. Exactly one succeeds, the rest receive a constraint
-conflict, and only one payment is confirmed. A separate test inserts duplicate
-hashes directly to prove both database constraints reject them.
+Evidence: `tests/prisma-repository.test.ts` exercises concurrent claims against
+a deterministic in-memory double with PostgreSQL transaction semantics (both
+the application pre-check path and the unique-violation/P2002 path), and
+`tests/durable-repository.test.ts` retains the earlier multi-thread constraint
+proof. `tests/prisma-integration.test.ts` runs the full create/retrieve/claim/
+idempotent/replay/concurrency suite against a real database when
+`TEST_DATABASE_URL` is set.
 
-LIMITATION: a local SQLite file is not shared across serverless instances and
-may not survive an ephemeral filesystem. For multi-instance deployment, point
-`DATABASE_PATH` at persistent storage or implement the Postgres adapter of the
-same interface; do not disable the uniqueness constraint.
+LIMITATION: the live PostgreSQL/Neon verification of the migration has not yet
+been run (no database was available in the build environment). Until it is, the
+database-level guarantee is exercised against the in-memory database double and
+the legacy SQLite proof. Do not disable the uniqueness constraint.
 
 ## Input validation
 
@@ -146,10 +153,12 @@ or in a middleware layer.
 
 ## Known limitations
 
-1. **Single-node SQLite.** Persistence is durable across restarts on the same
-   filesystem, but a local SQLite file is not shared across serverless
-   instances. Use a persistent volume or the Postgres adapter before scale-out;
-   never remove the `txHash` uniqueness constraint.
+1. **Live database verification pending.** The PostgreSQL/Neon migration is
+   implemented and tested against a deterministic in-memory double, but the
+   migration and concurrency behaviour have not yet been executed against a live
+   Neon database. Run `npm run prisma:migrate:deploy` and
+   `TEST_DATABASE_URL=... npm test` before production use. Never remove the
+   `txHash` uniqueness constraint.
 2. **No expiry enforcement yet.** The `EXPIRED` status exists but nothing
    expires payments automatically.
 3. **Direct transfers only.** The verifier accepts a direct `USDC.transfer`. A

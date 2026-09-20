@@ -23,6 +23,9 @@
 # local durable database
 /data
 
+# prisma generated client
+/lib/generated/
+
 # misc
 .DS_Store
 *.pem

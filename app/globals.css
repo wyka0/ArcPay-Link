@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Fonts — Sentient editorial faces from the approved Skal template.
+   --------------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Sentient";
+  src: url("/Sentient-Extralight.woff") format("woff");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Sentient";
+  src: url("/Sentient-LightItalic.woff") format("woff");
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------------------
+   Tokens — template palette.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --primary: #ffc700;
+  --primary-foreground: #ffffff;
+  --border: #424242;
+  --success: #72d69a;
+  --danger: #ff6b6b;
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 1rem;
+
+  @media (width >= 768px) {
+    padding-inline: 2rem;
+  }
+
+  @media (width >= 1280px) {
+    padding-inline: 3rem;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+
+  --font-mono: var(--font-geist-mono);
+  --font-sentient: "Sentient", sans-serif;
+
+  --shadow-glow: 0 0 8px 2px var(--tw-shadow-color);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#webgl {
+  top: 0;
+  left: 0;
+  position: fixed;
+  height: 100svh;
+  width: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#webgl canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   ArcPay base — accessibility carried over from the previous implementation.
+   --------------------------------------------------------------------------- */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: #ffffff;
+}
+
+.skip-link {
+  position: absolute;
+  left: 50%;
+  top: -100px;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 12px 18px;
+  background: #000;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: top 0.2s ease-out;
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Field styling shared by the create form. */
+.arc-field input,
+.arc-field textarea {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  padding: 0.9rem 1rem;
+  outline: none;
+  transition:
+    border-color 0.2s ease-out,
+    box-shadow 0.2s ease-out;
+}
+
+.arc-field input::placeholder,
+.arc-field textarea::placeholder {
+  color: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+
+.arc-field input:focus,
+.arc-field textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+/* Decorative static backdrop shown until the WebGL field is ready. */
+.arc-hero-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      60% 45% at 50% 68%,
+      rgba(255, 199, 0, 0.06),
+      transparent 70%
+    ),
+    radial-gradient(
+      80% 60% at 50% 40%,
+      rgba(255, 255, 255, 0.05),
+      transparent 72%
+    );
+}
+
+/* ---------------------------------------------------------------------------
+   Motion
+   --------------------------------------------------------------------------- */
+
+@keyframes arcpay-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.arc-pulse {
+  animation: arcpay-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
